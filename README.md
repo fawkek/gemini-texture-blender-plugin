@@ -1,3 +1,7 @@
+## Demo
+
+[Watch demo video](assets/demo.mp4)
+
 # Gemini Texture Generator for Blender
 
 Blender add-on that:

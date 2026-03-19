@@ -19,6 +19,10 @@ Blender add-on that:
 - can resize the generated texture to `512`, `256`, or `128`
 - saves generated textures and maps to a local output folder
 
+## Important
+
+For the plugin to work with the Gemini image API, your Google AI Studio / Gemini API project may require billing to be enabled and a payment card linked, depending on the model and quota tier available to your account.
+
 ## Install
 
 1. In Blender open `Edit > Preferences > Add-ons > Install...`

@@ -28,10 +28,12 @@ from bpy.props import StringProperty
 
 API_KEY_URL = "https://aistudio.google.com/app/apikey"
 ADDON_ID = __name__
-DEFAULT_MODEL = "gemini-2.5-flash-image"
+FREE_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"
+PAID_IMAGE_MODEL = "gemini-2.5-flash-image"
+DEFAULT_MODEL = FREE_IMAGE_MODEL
 MODEL_ALIASES = {
-    "gemini-2.5-flash-preview-image": DEFAULT_MODEL,
-    "gemini-2.5-flash-image-preview": DEFAULT_MODEL,
+    "gemini-2.5-flash-preview-image": PAID_IMAGE_MODEL,
+    "gemini-2.5-flash-image-preview": PAID_IMAGE_MODEL,
 }
 def default_output_dir():
     return os.path.join(os.path.expanduser("~"), "BlenderGeminiTextures")
@@ -105,8 +107,16 @@ def find_history_index(current_path):
 def normalize_model_name(model_name):
     model_name = (model_name or "").strip()
     if not model_name:
-        return DEFAULT_MODEL
+        return FREE_IMAGE_MODEL
     return MODEL_ALIASES.get(model_name, model_name)
+
+
+def resolve_model_name(settings):
+    if settings.model_preset == "FREE_2_FLASH_IMAGE":
+        return FREE_IMAGE_MODEL
+    if settings.model_preset == "PAID_25_FLASH_IMAGE":
+        return PAID_IMAGE_MODEL
+    return normalize_model_name(settings.model_name)
 
 
 def cleanup_image_reference(image):
@@ -169,7 +179,13 @@ def request_gemini_image(settings):
     if not api_key:
         raise ValueError("Укажите Gemini API key в Add-on Preferences.")
 
-    model = normalize_model_name(settings.model_name)
+    model = resolve_model_name(settings)
+    if model == PAID_IMAGE_MODEL and not settings.allow_paid_model:
+        raise ValueError(
+            "Выбрана платная модель Gemini 2.5 Flash Image. "
+            "Включите галочку подтверждения paid model или переключитесь на FREE модель."
+        )
+
     payload = {
         "contents": [{"parts": [{"text": build_prompt(settings)}]}],
         "generationConfig": {
@@ -699,6 +715,33 @@ class GeminiAddonPreferences(bpy.types.AddonPreferences):
 
 
 class GeminiTextureSettings(bpy.types.PropertyGroup):
+    model_preset: EnumProperty(
+        name="Model Preset",
+        description="Choose free or paid Gemini image model",
+        items=[
+            (
+                "FREE_2_FLASH_IMAGE",
+                "FREE - Gemini 2.0 Flash Image",
+                "Free-tier image generation model when available for your Google AI Studio project",
+            ),
+            (
+                "PAID_25_FLASH_IMAGE",
+                "PAID - Gemini 2.5 Flash Image / Nano Banana",
+                "Paid native image generation model. Can charge your billing account",
+            ),
+            (
+                "CUSTOM",
+                "Custom model",
+                "Use the custom model field below",
+            ),
+        ],
+        default="FREE_2_FLASH_IMAGE",
+    )
+    allow_paid_model: BoolProperty(
+        name="I understand this model can charge billing",
+        default=False,
+        description="Required before using the paid Gemini 2.5 Flash Image model",
+    )
     prompt: StringProperty(
         name="Prompt",
         description="Describe the texture you want to generate",
@@ -731,9 +774,9 @@ class GeminiTextureSettings(bpy.types.PropertyGroup):
         default="1_1",
     )
     model_name: StringProperty(
-        name="Model",
+        name="Custom Model",
         description="Gemini image model name",
-        default=DEFAULT_MODEL,
+        default=FREE_IMAGE_MODEL,
     )
     free_image_size: EnumProperty(
         name="Quality",
@@ -959,18 +1002,27 @@ class GEMINI_PT_texture_panel(bpy.types.Panel):
 
         settings_box = layout.box()
         settings_box.label(text="Generation", icon="TEXTURE")
-        settings_box.prop(settings, "model_name")
-        if "preview" in settings.model_name.lower():
-            settings_box.label(text="Preview models often have stricter quotas.", icon="ERROR")
+        settings_box.prop(settings, "model_preset")
+        if settings.model_preset == "FREE_2_FLASH_IMAGE":
+            settings_box.label(text="FREE model selected: no paid image output billing.", icon="CHECKMARK")
+            settings_box.label(text="Free quotas and availability depend on your AI Studio project.", icon="INFO")
+        elif settings.model_preset == "PAID_25_FLASH_IMAGE":
+            settings_box.label(text="PAID model selected: can charge your billing account.", icon="ERROR")
+            settings_box.prop(settings, "allow_paid_model")
+        else:
+            settings_box.prop(settings, "model_name")
+            if "preview" in settings.model_name.lower():
+                settings_box.label(text="Preview models often have stricter quotas.", icon="ERROR")
         settings_box.prop(settings, "prompt")
         settings_box.prop(settings, "seamless")
         settings_box.prop(settings, "size_mode", expand=True)
         if settings.size_mode == "FREE":
             settings_box.prop(settings, "aspect_ratio")
-            if settings.model_name.startswith("gemini-3"):
+            active_model = resolve_model_name(settings)
+            if active_model.startswith("gemini-3"):
                 settings_box.prop(settings, "free_image_size")
             else:
-                settings_box.label(text="Gemini 2.5 image outputs are about 1024px.", icon="INFO")
+                settings_box.label(text="This model usually outputs around 1024px.", icon="INFO")
         settings_box.operator("gemini.generate_texture", icon="RENDER_STILL")
 
         save_box = layout.box()
